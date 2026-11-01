@@ -1,6 +1,7 @@
 # Mealie MCP Server
 
 > **Compatibility:** Mealie **3.30.0** — last tested **2026-11-01**, against a real isolated Mealie instance.
+> Mealie **3.29.0** was also tested against a real isolated instance on the same date. Step durations and weekly plans require 3.30+ and are rejected before writing on older or unknown versions.
 > See [compatibility evidence](docs/compatibility.md) for the exact test scope and limits.
 
 An independently maintained fork of [Robert Diao's Mealie MCP Server](https://github.com/rldiao/mealie-mcp-server), based on upstream commit `86ebf37`.
@@ -19,6 +20,7 @@ stdio, remote HTTP and authentication varies; see [client setup](#client-setup).
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Remote Access](#remote-access)
+- [Transport, credentials and update checks](#transport-credentials-and-update-checks)
 - [Docker](#docker)
 - [Usage Examples](#usage-examples)
 - [Available Tools](#available-tools)
@@ -188,6 +190,9 @@ services:
       MCP_TRANSPORT: streamable-http
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8765"
+      # Replace mcp.example.com with your authenticated proxy hostname.
+      MCP_ALLOWED_HOSTS: "mcp.example.com,127.0.0.1:*,localhost:*"
+      MCP_ALLOWED_ORIGINS: "https://mcp.example.com,http://127.0.0.1:*,http://localhost:*"
     expose:
       - "8765"
     networks:
@@ -545,8 +550,12 @@ Licensed under the [MIT License](LICENSE). Original work © 2025 Robert Diao; fo
 
 ## Transport, credentials and update checks
 
-Use a non-admin Mealie API user. Startup verifies `/api/users/self` and rejects
-invalid, malformed or admin credentials. Incoming MCP authorization headers are
+Use a non-admin Mealie API user with `canOrganize` enabled for kitchen organization tools. Startup verifies `/api/users/self` and rejects
+invalid, malformed or admin credentials. Restart the connector whenever Mealie is upgraded or downgraded: its release version is read at startup to guard 3.30-only fields.
+
+Source metadata accepts text and HTTP(S) links; active `javascript:`, `data:` and `vbscript:` schemes are rejected.
+
+Incoming MCP authorization headers are
 never forwarded to Mealie. There is no built-in remote authentication: restrict
 private test ports to loopback and require an authenticated proxy for remote use.
 

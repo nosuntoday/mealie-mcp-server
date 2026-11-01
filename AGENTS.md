@@ -14,7 +14,7 @@
 ## Development Workflow
 
 - Install all development dependencies with `uv sync --extra dev`.
-- Before committing, run `uv run ruff check src tests` and `uv run pytest -q`.
+- Before committing, run `uv run ruff check src tests scripts` and `uv run pytest -q`.
 - Keep [`uv.lock`](uv.lock) synchronized whenever
   [`pyproject.toml`](pyproject.toml) changes.
 - Make focused commits. Do not stage generated files, local logs, `.env`,

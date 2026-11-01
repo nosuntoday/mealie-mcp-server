@@ -43,6 +43,13 @@ def _upload_extension(filename: str, extension: Optional[str] = None) -> str:
 class RecipeMixin:
     """Mixin class for recipe-related API endpoints"""
 
+    def require_step_duration_support(self, recipe_data: Dict[str, Any]) -> None:
+        if any(
+            "durationSeconds" in step
+            for step in recipe_data.get("recipeInstructions", []) or []
+        ):
+            self.require_mealie_330()
+
     def get_recipes(
         self,
         search: Optional[str] = None,
@@ -136,6 +143,7 @@ class RecipeMixin:
         if not recipe_data:
             raise ValueError("Recipe data cannot be empty")
 
+        self.require_step_duration_support(recipe_data)
         logger.info({"message": "Updating recipe"})
         return self._handle_request("PUT", f"/api/recipes/{slug}", json=recipe_data)
 
@@ -284,6 +292,7 @@ class RecipeMixin:
         if not recipe_data:
             raise ValueError("Recipe data cannot be empty")
 
+        self.require_step_duration_support(recipe_data)
         logger.info({"message": "Patching recipe"})
         return self._handle_request("PATCH", f"/api/recipes/{slug}", json=recipe_data)
 

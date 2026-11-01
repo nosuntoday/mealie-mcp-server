@@ -146,6 +146,11 @@ def _recipe_changes(
             changes[field + "Seconds"] = None
     if "name" in changes:
         _require_text(changes["name"], "Recipe name")
+    source = changes.get("orgURL", "")
+    # Only detect active schemes; preserve the original free-form metadata.
+    normalized_source = re.sub(r"[\x00-\x20\x7f]", "", source.lstrip()).lower()
+    if normalized_source.startswith(("javascript:", "data:", "vbscript:")):
+        raise ValueError("Unsafe scheme in recipe source metadata")
     if "recipeServings" in changes and not math.isfinite(changes["recipeServings"]):
         raise ValueError("Servings must be finite")
     built_ingredients = [_build_ingredient(i) for i in ingredients or []]
@@ -223,6 +228,7 @@ def _create_populated_recipe(
     _require_text(name, "Recipe name")
     if image_url is not None:
         TypeAdapter(AnyHttpUrl).validate_python(image_url)
+    mealie.require_step_duration_support(changes)
     slug = mealie.create_recipe(name)
     with _created_recipe_stage(slug, "fetch"):
         current = mealie.get_recipe(slug)

@@ -87,6 +87,7 @@ class MealplanMixin:
         }
 
         if entry.end_date is not None:
+            self.require_mealie_330()
             payload["endDate"] = entry.end_date
         if entry.recipe_id:
             payload["recipeId"] = entry.recipe_id
@@ -107,6 +108,8 @@ class MealplanMixin:
             by_alias=True, exclude_unset=True
         )
 
+        if "endDate" in patch:
+            self.require_mealie_330()
         logger.info({"message": "Updating mealplan entry"})
         current_entry = self._handle_request(
             "GET", f"/api/households/mealplans/{entry_id}"

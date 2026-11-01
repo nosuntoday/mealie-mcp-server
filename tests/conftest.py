@@ -88,6 +88,7 @@ class FakeFetcher(MealieFetcher):
     """
 
     def __init__(self):
+        self._mealie_version = (3, 30, 0)
         self.requests = []
         self.created_slug = "test-recipe"
         self.recipe = deepcopy(BASE_RECIPE)

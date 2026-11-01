@@ -113,6 +113,8 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         """
         with tool_error_boundary("Error creating bulk mealplan entries"):
             validated = [MealPlanEntry.model_validate(entry) for entry in entries]
+            if any(entry.end_date is not None for entry in validated):
+                mealie.require_mealie_330()
             completed = []
             for index, entry in enumerate(validated):
                 try:

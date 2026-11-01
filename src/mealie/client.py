@@ -45,6 +45,13 @@ class MealieClient:
         try:
             response = self._client.get("/api/app/about")
             response.raise_for_status()
+            about = response.json()
+            version = about.get("version") if isinstance(about, dict) else None
+            match = (
+                re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", version)
+                if isinstance(version, str) else None
+            )
+            self._mealie_version = tuple(map(int, match.groups())) if match else None
             identity = self._client.get("/api/users/self")
             identity.raise_for_status()
             user = identity.json()
@@ -65,6 +72,14 @@ class MealieClient:
                 raise ConnectionError("Could not connect to the Mealie API") from None
             raise
         logger.info({"operation": "Connected to Mealie API"})
+
+    def require_mealie_330(self) -> None:
+        """Reject unsupported writes instead of letting older APIs discard fields."""
+        if self._mealie_version is None or self._mealie_version < (3, 30, 0):
+            raise ValueError(
+                "This operation requires Mealie 3.30 or newer with a known release version; "
+                "no changes were written. Restart the connector after upgrading Mealie."
+            )
 
     @staticmethod
     def _log_failure(operation: str, error: BaseException) -> None:

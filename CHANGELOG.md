@@ -11,7 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Complete the audit against our eight upstream PR heads (#35–#42). Version 0.2.0 was based on an earlier hardening snapshot and missed the final changes from #38 and #39.
 - Preserve optional ingredient `isFood` and `disableAmount` flags when supplied, without inventing defaults when absent.
 - Accept Mealie-native recipe import sources (`www.` addresses, share text containing an HTTP(S) URL, and long URLs). Preserve long HTTP(S) image URLs without truncation.
-- Treat `org_url` as free-form source metadata, including cookbook references.
+- Treat `org_url` as free-form source metadata, including cookbook references; reject active JavaScript/data/VBScript schemes.
+- Reject step duration and weekly-plan writes before mutation on Mealie older than 3.30 or an unknown release version. Validate mixed meal-plan batches before any entry is created. Recheck the version by restarting the connector after a Mealie upgrade/downgrade.
+- Extend the disposable real-application check to Mealie 3.29 and document its verified legacy behavior.
 - Retain all seven added upstream regression suites. Explicitly adapt only the two fork policies: non-admin credentials and absence of server-local upload tools. See [PR parity audit](docs/pr-parity-2026-11-01.md).
 
 ## 0.2.0 — 2026-11-01 (maintained fork)
