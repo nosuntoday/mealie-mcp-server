@@ -1,7 +1,6 @@
 from copy import deepcopy
 
 import pytest
-
 from conftest import BASE_RECIPE, FakeFetcher
 
 

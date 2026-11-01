@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
+from pydantic import HttpUrl, TypeAdapter
 
 from mealie import MealieFetcher
 from models.recipe import (
@@ -28,8 +30,8 @@ def _build_ingredient(
 ) -> RecipeIngredient:
     """Coerce a flat string or structured ingredient into a RecipeIngredient.
 
-    A plain string becomes a note for Mealie's natural-language parser to
-    resolve; a structured object maps its fields straight onto the Mealie
+    A plain string is stored as a note without parsing. Call parse_ingredients
+    explicitly for structured quantities; structured objects map onto the Mealie
     RecipeIngredient model.
     """
     if isinstance(ingredient, str):
@@ -46,7 +48,7 @@ def _build_instruction(
     if isinstance(instruction, str):
         return RecipeInstruction(text=instruction)
     if isinstance(instruction, RecipeInstructionInput):
-        instruction = instruction.model_dump(exclude_none=True)
+        instruction = instruction.model_dump(exclude_unset=True)
     return RecipeInstruction(**instruction)
 
 
@@ -137,8 +139,15 @@ def _recipe_changes(
     changes = {
         field_names[key]: value for key, value in fields.items() if value is not None
     }
+    # Mealie 3.29 displays structured duration and free text together. An explicit
+    # text replacement must clear only that duration; unrelated times stay intact.
+    for field in ("totalTime", "prepTime", "performTime"):
+        if field in changes:
+            changes[field + "Seconds"] = None
     if "name" in changes:
         _require_text(changes["name"], "Recipe name")
+    if changes.get("orgURL"):
+        TypeAdapter(HttpUrl).validate_python(changes["orgURL"])
     if "recipeServings" in changes and not math.isfinite(changes["recipeServings"]):
         raise ValueError("Servings must be finite")
     built_ingredients = [_build_ingredient(i) for i in ingredients or []]
@@ -146,11 +155,20 @@ def _recipe_changes(
     _normalize_references(built_ingredients, built_instructions)
     if ingredients is not None:
         changes["recipeIngredient"] = [
-            i.model_dump(exclude_none=True) for i in built_ingredients
+            i.model_dump(exclude_none=True, exclude_unset=True, exclude={"display"})
+            for i in built_ingredients
         ]
     if instructions is not None:
         changes["recipeInstructions"] = [
-            i.model_dump(exclude_none=True) for i in built_instructions
+            {
+                **i.model_dump(exclude_none=True, exclude_unset=True),
+                **(
+                    {"durationSeconds": i.durationSeconds}
+                    if "durationSeconds" in i.model_fields_set
+                    else {}
+                ),
+            }
+            for i in built_instructions
         ]
     if tags is not None:
         changes["tags"] = [_organizer_payload(t) for t in tags]
@@ -163,9 +181,7 @@ def _recipe_changes(
     return changes
 
 
-def _compose_recipe(
-    current: Dict[str, Any], changes: Dict[str, Any]
-) -> Dict[str, Any]:
+def _compose_recipe(current: Dict[str, Any], changes: Dict[str, Any]) -> Dict[str, Any]:
     """Preserve fetched fields, replacing content but merging settings toggles."""
     recipe = deepcopy(current)
     recipe.setdefault("nutrition", {})
@@ -184,7 +200,7 @@ def _created_recipe_stage(slug: str, stage: str):
     try:
         with tool_error_boundary("Error completing created recipe"):
             yield
-    except ToolError:
+    except ToolError as error:
         raise ToolError(
             json.dumps(
                 {
@@ -194,6 +210,7 @@ def _created_recipe_stage(slug: str, stage: str):
                     ),
                     "created_slug": slug,
                     "stage": stage,
+                    "detail": str(error),
                 }
             )
         ) from None
@@ -207,7 +224,7 @@ def _create_populated_recipe(
 ) -> Dict[str, Any]:
     _require_text(name, "Recipe name")
     if image_url is not None:
-        _require_text(image_url, "Image URL")
+        TypeAdapter(HttpUrl).validate_python(image_url)
     slug = mealie.create_recipe(name)
     with _created_recipe_stage(slug, "fetch"):
         current = mealie.get_recipe(slug)
@@ -224,7 +241,14 @@ def _create_populated_recipe(
 def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
     """Register all recipe-related tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     def get_recipes(
         search: Optional[str] = None,
         page: Optional[int] = None,
@@ -265,7 +289,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 require_all_categories=require_all_categories,
             )
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     def get_recipe(slug: str, concise: bool = False) -> Dict[str, Any]:
         """Retrieve a recipe, optionally returning only a concise summary.
 
@@ -291,6 +322,9 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                     "recipeYieldQuantity",
                     "recipeYield",
                     "totalTime",
+                    "totalTimeSeconds",
+                    "prepTimeSeconds",
+                    "performTimeSeconds",
                     "rating",
                     "orgURL",
                     "tags",
@@ -301,10 +335,15 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 exclude_none=True,
             )
 
-    @mcp.tool()
-    def import_recipe_from_url(
-        url: str, include_tags: bool = False
-    ) -> Dict[str, Any]:
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        )
+    )
+    def import_recipe_from_url(url: str, include_tags: bool = False) -> Dict[str, Any]:
         """Import a recipe into Mealie by scraping a URL.
 
         Prefer this for ordinary recipe webpages.
@@ -338,7 +377,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             with _created_recipe_stage(slug, "fetch"):
                 return mealie.get_recipe(slug)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=True,
+        )
+    )
     def create_recipe(
         name: str,
         description: Optional[str] = None,
@@ -368,8 +414,8 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         Ingredients and instructions each accept either a plain string or a
         structured object:
 
-        - An ingredient string (e.g. "200 g basmati rice") is resolved by
-          Mealie's natural-language parser into quantity/unit/food.
+        - An ingredient string (e.g. "200 g basmati rice") is stored as a
+          text note. Use parse_ingredients explicitly for quantity/unit/food.
         - An ingredient object can set quantity, note, title, an existing
           Mealie unit/food (by id and name), and a referenceId for step links.
         - An instruction string is the step text; an instruction object can
@@ -381,7 +427,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             name: The name of the new recipe.
             description: Recipe description.
             org_url: Source URL for the recipe (shown as a link in the Mealie UI).
-            total_time: Total time as free text, e.g. "35 min" or ISO-8601 "PT35M".
+            total_time: Total time as free text, e.g. "35 min".
             prep_time: Preparation time, same format as total_time.
             cook_time: Cooking time, same format as total_time.
             perform_time: Hands-on/active time, same format as total_time.
@@ -396,8 +442,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 cholesterol in mg, the rest in grams). Omitted keys stay empty.
             settings: Display toggles to override on the new recipe. Only the
                 toggles you pass are changed; the rest keep the defaults Mealie
-                seeds from the household preferences. Set showAssets here when
-                you know you are about to attach a file.
+                seeds from the household preferences.
 
         Returns:
             Dict[str, Any]: The created recipe details.
@@ -424,7 +469,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             )
             return _create_populated_recipe(mealie, name, changes, image_url)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def update_recipe(
         slug: str,
         name: Optional[str] = None,
@@ -448,7 +500,8 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         Omitted or null fields are unchanged. Provided ingredient/instruction
         lists replace those fields; empty lists clear them. Content changes use
         a read-merge-write to preserve other recipe fields; metadata-only changes
-        use PATCH.
+        use PATCH. Setting total_time, prep_time, or perform_time clears the
+        corresponding structured duration in Mealie 3.29 and later.
 
         Args:
             slug: The unique text identifier for the recipe to be updated.
@@ -456,7 +509,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             description: New description for the recipe.
             recipe_yield: Yield as free text, e.g. "4 Portionen".
             servings: Number of servings (numeric).
-            total_time: Total time as free text, e.g. "35 min" or ISO-8601 "PT35M".
+            total_time: Total time as free text, e.g. "35 min".
             prep_time: Preparation time, same format as total_time.
             cook_time: Cooking time, same format as total_time.
             perform_time: Hands-on/active time, same format as total_time.
@@ -502,9 +555,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 raise ValueError("At least one field must be provided to update")
             if ingredients is not None or instructions is not None:
                 current = mealie.get_recipe(slug)
-                return mealie.update_recipe(
-                    slug, _compose_recipe(current, recipe_data)
-                )
+                return mealie.update_recipe(slug, _compose_recipe(current, recipe_data))
             if settings is not None:
                 # Mealie drops some toggles omitted from a settings PATCH, so
                 # send the complete object built from the recipe's current one
@@ -516,7 +567,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
 
             return mealie.patch_recipe(slug, recipe_data)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def duplicate_recipe(slug: str, name: Optional[str] = None) -> Dict[str, Any]:
         """Duplicate an existing recipe, creating a copy with a new slug.
 
@@ -530,7 +588,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         with tool_error_boundary("Error duplicating recipe"):
             return mealie.duplicate_recipe(slug, name)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def mark_recipe_last_made(slug: str) -> Dict[str, Any]:
         """Mark a recipe as having been made today (updates last made timestamp).
 
@@ -543,7 +608,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         with tool_error_boundary("Error updating recipe last made"):
             return mealie.update_recipe_last_made(slug)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=True,
+        )
+    )
     def set_recipe_image_from_url(slug: str, image_url: str) -> Dict[str, Any]:
         """Set a recipe's image by scraping it from a URL.
 
@@ -557,69 +629,14 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         with tool_error_boundary("Error setting recipe image from URL"):
             return mealie.scrape_recipe_image_from_url(slug, image_url)
 
-    @mcp.tool()
-    def upload_recipe_image_file(
-        slug: str, image_path: str, extension: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Upload an image file for a recipe.
-
-        Attach a photo to an existing recipe; this does not extract recipe text
-        from the image or create a new recipe.
-        Args:
-            slug: The unique text identifier for the recipe.
-            image_path: Local file path to the image to upload.
-            extension: Image extension such as "jpg". Derived from image_path when omitted.
-
-        Returns:
-            Dict[str, Any]: Confirmation that the image was uploaded.
-        """
-        with tool_error_boundary("Error uploading recipe image"):
-            import os
-
-            if not os.path.exists(image_path):
-                raise ValueError("Image file not found")
-
-            with open(image_path, "rb") as f:
-                image_data = f.read()
-
-            filename = os.path.basename(image_path)
-            return mealie.upload_recipe_image(slug, image_data, filename, extension)
-
-    @mcp.tool()
-    def upload_recipe_asset_file(
-        slug: str,
-        asset_path: str,
-        name: Optional[str] = None,
-        icon: Optional[str] = None,
-        extension: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Upload an asset file (document, PDF, etc.) for a recipe.
-
-        Args:
-            slug: The unique text identifier for the recipe.
-            asset_path: Local file path to the asset to upload.
-            name: Display name for the asset. Derived from the file name when omitted.
-            icon: Material Design icon name, for example "mdi-file-pdf-box".
-            extension: Asset extension such as "pdf". Derived from asset_path when omitted.
-
-        Returns:
-            Dict[str, Any]: Details of the uploaded asset.
-        """
-        with tool_error_boundary("Error uploading recipe asset"):
-            import os
-
-            if not os.path.exists(asset_path):
-                raise ValueError("Asset file not found")
-
-            with open(asset_path, "rb") as f:
-                asset_data = f.read()
-
-            filename = os.path.basename(asset_path)
-            return mealie.upload_recipe_asset(
-                slug, asset_data, filename, name=name, icon=icon, extension=extension
-            )
-
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def update_recipe_categories_and_tags(
         slug: str,
         category_ids: Optional[List[str]] = None,
@@ -638,9 +655,18 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             Dict[str, Any]: The updated recipe details.
         """
         with tool_error_boundary("Error updating recipe categories and tags"):
-            return mealie.set_recipe_categories_and_tags(slug, category_ids=category_ids, tag_ids=tag_ids)
+            return mealie.set_recipe_categories_and_tags(
+                slug, category_ids=category_ids, tag_ids=tag_ids
+            )
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def delete_recipe(slug: str) -> Dict[str, Any]:
         """Delete a recipe permanently.
 

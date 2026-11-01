@@ -4,16 +4,21 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mealie-mcp-server"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Maintained Mealie MCP server with validated recipe roundtrips and Mealie 3.30 support"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.12.0,<2",
+    "mcp[cli]>=1.30.0,<2",
     "pydantic>=2.11.3",
     "python-dotenv>=1.1.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/nosuntoday/mealie-mcp-server"
+Issues = "https://github.com/nosuntoday/mealie-mcp-server/issues"
+Upstream = "https://github.com/rldiao/mealie-mcp-server"
 
 [project.scripts]
 mealie-mcp-server = "server:main"
@@ -51,3 +56,10 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Correctness and import order; retain the established typing style.
+select = ["E4", "E7", "E9", "F", "I"]

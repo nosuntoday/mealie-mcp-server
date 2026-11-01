@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 
 from utils import format_api_params
 
+from .client import path_segment
+
 logger = logging.getLogger("mealie-mcp")
 
 
@@ -86,6 +88,7 @@ class CategoriesMixin:
         Returns:
             JSON response containing the category details
         """
+        category_id = path_segment(category_id)
         if not category_id:
             raise ValueError("Category ID cannot be empty")
 
@@ -101,6 +104,7 @@ class CategoriesMixin:
         Returns:
             JSON response containing the category details
         """
+        category_slug = path_segment(category_slug)
         if not category_slug:
             raise ValueError("Category slug cannot be empty")
 
@@ -117,6 +121,7 @@ class CategoriesMixin:
         Returns:
             JSON response containing the updated category
         """
+        category_id = path_segment(category_id)
         if not category_id:
             raise ValueError("Category ID cannot be empty")
         if not category_data:
@@ -134,6 +139,7 @@ class CategoriesMixin:
         Returns:
             JSON response confirming deletion
         """
+        category_id = path_segment(category_id)
         if not category_id:
             raise ValueError("Category ID cannot be empty")
 

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from mealie import MealieFetcher
 from mealie.client import MealieApiError
@@ -14,7 +15,14 @@ from tools.errors import tool_error_boundary
 def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
     """Register all mealplan-related tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     def get_all_mealplans(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -40,17 +48,26 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 per_page=per_page,
             )
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def create_mealplan(
         date: str,
         recipe_id: Optional[str] = None,
         title: Optional[str] = None,
         entry_type: str = "breakfast",
+        end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new meal plan entry.
 
         Args:
             date: Date for the mealplan in ISO format (YYYY-MM-DD)
+            end_date: Mealie 3.30+ weekly entry end, exactly six days after date.
             recipe_id: UUID of the recipe to add to the mealplan (optional)
             title: Title for the mealplan entry if not using a recipe (optional)
             entry_type: Type of mealplan entry (breakfast, lunch, dinner, side)
@@ -64,9 +81,17 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 recipe_id=recipe_id,
                 title=title,
                 entry_type=entry_type,
+                end_date=end_date,
             )
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def create_mealplan_bulk(
         entries: List[MealPlanEntry],
     ) -> Dict[str, Any]:
@@ -78,6 +103,7 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         Args:
             entries: List of mealplan entries, each containing:
                 - date (str): Date in ISO format (YYYY-MM-DD)
+                - end_date (str, optional): Mealie 3.30+ week end, six days after date
                 - recipe_id (str, optional): UUID of the recipe
                 - title (str, optional): Title for the entry
                 - entry_type (str, optional): Type of entry (breakfast, lunch, dinner, side)
@@ -102,7 +128,14 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 completed.append({"index": index, "id": result.get("id")})
             return {"message": f"Successfully created {len(entries)} mealplan entries"}
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def update_mealplan(
         entry_id: str,
         date: Optional[str] = None,
@@ -110,16 +143,26 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         title: Optional[str] = None,
         entry_type: Optional[str] = None,
         clear_recipe: bool = False,
+        end_date: Optional[str] = None,
+        clear_end_date: bool = False,
     ) -> Dict[str, Any]:
         """Update selected fields; clear_recipe removes the linked recipe.
 
         Omitted or null arguments leave fields unchanged. clear_recipe cannot
-        be combined with a replacement recipe_id.
+        be combined with a replacement recipe_id. Mealie 3.30+ weekly entries
+        accept end_date (six days after date); clear_end_date converts to a day.
+        Move both dates together when rescheduling a week.
         """
         with tool_error_boundary("Error updating mealplan entry"):
             if clear_recipe and recipe_id is not None:
                 raise ValueError("Cannot clear and replace a recipe in one update")
+            if clear_end_date and end_date is not None:
+                raise ValueError("Cannot clear and replace an end date in one update")
             entry_data = {}
+            if end_date is not None:
+                entry_data["endDate"] = end_date
+            if clear_end_date:
+                entry_data["endDate"] = None
             if date is not None:
                 entry_data["date"] = date
             if recipe_id is not None:
@@ -134,7 +177,14 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
                 raise ValueError("At least one field must be provided to update")
             return mealie.update_mealplan(entry_id, entry_data)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+    )
     def delete_mealplan(item_id: str) -> Dict[str, Any]:
         """Delete a specific meal plan entry.
 
@@ -147,7 +197,14 @@ def register_mealplan_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         with tool_error_boundary("Error deleting mealplan entry"):
             return mealie.delete_mealplan(item_id)
 
-    @mcp.tool()
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+            openWorldHint=False,
+        )
+    )
     def get_todays_mealplan() -> List[Dict[str, Any]]:
         """Get the mealplan entries for today.
 

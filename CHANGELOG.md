@@ -4,7 +4,18 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 0.2.0 — 2026-11-01 (maintained fork)
+
+- Preserve Mealie 3.30 `durationSeconds` in recipe-step creation and replacement, with explicit zero/null clearing and validation.
+- Support weekly meal plans through `end_date`, including bulk creation, merged update validation and explicit clearing.
+- Carry forward tested roundtrip fixes, repeated array filters, credential/path validation, bounded workers, serialized short writes and uncertain-import reporting.
+- Refresh the MCP 1.x runtime and certificate bundle. Local server-file upload tools are removed; text/URL import and public image URLs remain supported.
+- Require a non-admin Mealie credential at startup; remote access still requires an authenticated proxy.
+- Publish this independently maintained fork with original MIT attribution. See `docs/compatibility.md` for test evidence; no production migration is implied.
+
+## Upstream history (through 86ebf37)
+
+### Previously unreleased
 
 ### Changed
 

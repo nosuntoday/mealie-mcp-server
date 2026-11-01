@@ -1,12 +1,18 @@
+import inspect
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+from functools import partial, wraps
 from typing import Any, Literal
 
+import anyio
+from anyio.lowlevel import RunVar
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from mealie import MealieFetcher
 from prompts import register_prompts
@@ -14,6 +20,23 @@ from tools import register_ai_import_tools, register_all_tools
 
 logger = logging.getLogger("mealie-mcp")
 Transport = Literal["stdio", "sse", "streamable-http"]
+
+
+def _allowlist(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Replace defaults with exact authorities; wildcard ports are permitted."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    values = tuple(value.strip() for value in raw.split(","))
+    for value in values:
+        authority = value
+        if name == "MCP_ALLOWED_ORIGINS":
+            if not value.startswith(("https://", "http://")):
+                raise ValueError(f"Invalid {name}")
+            authority = value.split("://", 1)[1]
+        if not re.fullmatch(r"[\w.-]+(?::(?:[0-9]+|\*))?", authority):
+            raise ValueError(f"Invalid {name}")
+    return values
 
 
 @dataclass(frozen=True)
@@ -25,6 +48,8 @@ class ServerConfig:
     port: int = 8765
     log_level: str = "INFO"
     enable_ai_import: bool = False
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1:*", "localhost:*")
+    allowed_origins: tuple[str, ...] = ("http://127.0.0.1:*", "http://localhost:*")
 
     @classmethod
     def from_environment(cls) -> "ServerConfig":
@@ -61,6 +86,8 @@ class ServerConfig:
             port=port,
             log_level=log_level,
             enable_ai_import=ai_import == "true",
+            allowed_hosts=_allowlist("MCP_ALLOWED_HOSTS", cls.allowed_hosts),
+            allowed_origins=_allowlist("MCP_ALLOWED_ORIGINS", cls.allowed_origins),
         )
 
 
@@ -114,6 +141,8 @@ class _MealieServer(FastMCP):
     def __init__(self, config: ServerConfig | None):
         self.client_provider = _ClientProvider(config)
         self._ai_import_registered = False
+        self._worker_limiter = RunVar("mealie-worker-limiter")
+        self._write_lock = RunVar("mealie-short-write-lock")
 
         @asynccontextmanager
         async def lifespan(_: FastMCP) -> AsyncIterator[dict[str, MealieFetcher]]:
@@ -127,10 +156,61 @@ class _MealieServer(FastMCP):
             port=config.port if config else 8765,
             log_level=config.log_level if config else "INFO",
             lifespan=lifespan,
+            transport_security=TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=list(config.allowed_hosts if config else ServerConfig.allowed_hosts),
+                allowed_origins=list(config.allowed_origins if config else ServerConfig.allowed_origins),
+            ),
         )
+
+    def tool(self, *args, **kwargs):
+        """Keep synchronous API calls off the loop, with four workers per loop.
+
+        Cancellation waits for in-flight requests: abandoning a worker could close
+        its shared HTTP client or hide a write whose outcome is still unknown.
+        """
+        register = super().tool(*args, **kwargs)
+        hints = kwargs.get("annotations")
+        serial = hints is not None and not hints.readOnlyHint and not hints.openWorldHint
+
+        def decorate(function):
+            if inspect.iscoroutinefunction(function):
+                register(function)
+            else:
+                @wraps(function)
+                async def call(*call_args, **call_kwargs):
+                    limiter = self._worker_limiter.get(None)
+                    if limiter is None:
+                        limiter = anyio.CapacityLimiter(4)
+                        self._worker_limiter.set(limiter)
+                    async def run():
+                        return await anyio.to_thread.run_sync(
+                            partial(function, *call_args, **call_kwargs),
+                            abandon_on_cancel=False, limiter=limiter,
+                        )
+
+                    if serial:
+                        # Restore ordering of short read-modify-write tools,
+                        # including parallel calls from one chat response.
+                        lock = self._write_lock.get(None)
+                        if lock is None:
+                            lock = anyio.Lock()
+                            self._write_lock.set(lock)
+                        async with lock:
+                            return await run()
+                    return await run()
+                register(call)
+            return function
+
+        return decorate
 
     def _configure_optional_tools(self) -> None:
         config = self.client_provider.configuration()
+        self.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(config.allowed_hosts),
+            allowed_origins=list(config.allowed_origins),
+        )
         if config.enable_ai_import and not self._ai_import_registered:
             register_ai_import_tools(self, self.client_provider)
             self._ai_import_registered = True
@@ -163,9 +243,11 @@ class _MealieServer(FastMCP):
         return app
 
     def streamable_http_app(self):
+        self._configure_optional_tools()
         return self._application_lifespan(super().streamable_http_app())
 
     def sse_app(self, mount_path: str | None = None):
+        self._configure_optional_tools()
         return self._application_lifespan(super().sse_app(mount_path))
 
 

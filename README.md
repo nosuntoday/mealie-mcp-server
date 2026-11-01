@@ -1,10 +1,17 @@
 # Mealie MCP Server
 
-[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/rldiao-mealie-mcp-server-badge.png)](https://mseep.ai/app/rldiao-mealie-mcp-server)
+> **Compatibility:** Mealie **3.30.0** — last tested **2026-11-01**, against a real isolated Mealie instance.
+> See [compatibility evidence](docs/compatibility.md) for the exact test scope and limits.
+
+An independently maintained fork of [Robert Diao's Mealie MCP Server](https://github.com/rldiao/mealie-mcp-server), based on upstream commit `86ebf37`.
+Original copyright and the [MIT license](LICENSE) are retained. This fork is not an official Mealie project or an endorsement by the original author.
+
+Version **0.2.0** adds Mealie 3.30 step durations and weekly plans, plus credential validation, field preservation, bounded concurrency and explicit tool annotations. Server-local file uploads are intentionally unavailable.
 
 A Model Context Protocol (MCP) server that connects AI assistants to your
 [Mealie](https://github.com/mealie-recipes/mealie) recipe database through clients
-such as Claude Desktop.
+including ChatGPT, Claude, Codex and other MCP-capable agents. Client support for
+stdio, remote HTTP and authentication varies; see [client setup](#client-setup).
 
 ## Contents
 
@@ -24,7 +31,7 @@ such as Claude Desktop.
 
 - **Recipes:** Create, read, update, import, duplicate, and delete recipes.
 - **Search:** Filter by text, categories, tags, and tools with AND/OR logic.
-- **Images and assets:** Upload recipe images and files, or set images from URLs.
+- **Images:** Set recipe images from public URLs. Upload local files through Mealie itself.
 - **Nutrition and display:** Set per-serving nutrition and recipe visibility
   settings such as `showAssets` and `showNutrition`.
 - **Ingredients:** Resolve free-text ingredients against Mealie's food and unit
@@ -35,6 +42,14 @@ such as Claude Desktop.
   unused categories and tags.
 - **Meal planning:** View, create, update, and delete meal plan entries, create
   multiple entries, and mark recipes as made today.
+
+## Client setup
+
+- **ChatGPT:** use a remote MCP connector where available in your account. Deploy behind an authenticated HTTPS proxy compatible with that client's authentication flow. This server alone does not implement OAuth.
+- **Claude:** local stdio (including Claude Desktop) or a remote authenticated HTTP connector, depending on the client.
+- **Codex and other agents:** register the local `mealie-mcp-server` stdio command or an authenticated remote MCP endpoint according to the client's configuration.
+
+Client examples describe integration options, not a promise that every client/version/authentication combination was tested. Recipe operations are tested independently of any one AI product.
 
 ## Quick Start
 
@@ -53,7 +68,7 @@ Clone the repository, then install the server into Claude Desktop with the
 is needed):
 
 ```bash
-git clone https://github.com/rldiao/mealie-mcp-server.git
+git clone --branch v0.2.0 https://github.com/nosuntoday/mealie-mcp-server.git
 cd mealie-mcp-server
 uv sync --locked
 uv run mcp install src/server.py --with-editable . \
@@ -73,7 +88,7 @@ cloning (in Claude Desktop, use `claude_desktop_config.json`):
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/rldiao/mealie-mcp-server",
+        "git+https://github.com/nosuntoday/mealie-mcp-server@v0.2.0",
         "mealie-mcp-server"
       ],
       "env": {
@@ -126,10 +141,12 @@ enforces authentication and HTTPS.
 
 The [Dockerfile](Dockerfile) runs the server as a persistent container.
 
+The bundled image is configured for **streamable HTTP on port 8765**; its healthcheck expects that configuration. Keep `MCP_TRANSPORT=streamable-http` and `MCP_PORT=8765` in Docker. For stdio use the Python entry point. Host/Origin allowlists and an authenticated HTTPS proxy are required for remote access.
+
 ### Build
 
 ```bash
-docker build -t mealie-mcp-server .
+docker buildx build --load -t mealie-mcp-server:0.2.0 .
 ```
 
 ### Standalone
@@ -143,7 +160,7 @@ docker run -d \
   -e MCP_HOST=0.0.0.0 \
   -e MCP_PORT=8765 \
   -p 127.0.0.1:8765:8765 \
-  mealie-mcp-server
+  mealie-mcp-server:0.2.0
 ```
 
 The port is published only on the host's loopback interface. See
@@ -204,8 +221,6 @@ See [Usage Examples](USAGE_EXAMPLES.md) for detailed workflows and troubleshooti
 - `duplicate_recipe` - Clone a recipe
 - `mark_recipe_last_made` - Update last made timestamp
 - `set_recipe_image_from_url` - Set image from URL
-- `upload_recipe_image_file` - Upload image file
-- `upload_recipe_asset_file` - Upload document/asset
 - `update_recipe_categories_and_tags` - Replace or clear categories, tags, or both using IDs
 - `delete_recipe` - Delete recipe
 
@@ -282,10 +297,10 @@ See [Usage Examples](USAGE_EXAMPLES.md) for detailed workflows and troubleshooti
 - `delete_mealplan` - Delete an entry
 - `get_todays_mealplan` - Get today's meals
 
-**Total: 61 tools**
+**Total: 59 tools**
 
 With `MEALIE_ENABLE_AI_IMPORT=true`, `import_recipe_with_ai` adds one optional
-recipe operation: **62 total tools, including 13 recipe tools**. It is absent
+recipe operation: **60 total tools, including 11 recipe tools**. It is absent
 from discovery and cannot be called when disabled.
 
 ### Migrating consolidated tools (breaking change)
@@ -329,9 +344,6 @@ configured for the API user's group. It accepts any combination of:
 
 - `content`: plain text, raw HTML, or JSON; also used for corrections or notes.
 - `url`: an HTTP(S) recipe or video URL, fetched by Mealie and saved as the source.
-- `image_paths`: ordered image paths accessible to the **MCP server's filesystem**,
-  not a remote caller's computer. Multiple photos become one recipe; the first
-  becomes its cover image.
 
 At least one nonblank source is required. Sources are combined, with pasted
 content taking precedence when they disagree. Optional `translate_language`
@@ -339,15 +351,14 @@ requests translation. `create_new_organizers` defaults to `false`: matching
 existing tags, categories, and kitchen tools may be assigned, but new ones are
 created only when explicitly requested.
 
-Before each import the server reads `/api/groups/self` to check `aiEnabled` and,
-for photos, `imageProviderEnabled`. Missing/malformed capabilities or a failed
+Before each import the server reads `/api/groups/self` to check `aiEnabled`. Missing/malformed capabilities or a failed
 lookup produce an explicit error, not a silent disabled result. Video detection
 and the audio-provider requirement are handled by Mealie. These checks establish
 configuration, not provider connectivity, credentials, or available quota.
 
 **This tool immediately creates and saves a recipe.** Source material is processed
 by Mealie's configured AI providers and may incur charges. Review the returned
-recipe for accuracy. The import has a 300-second read timeout; other API calls
+recipe for accuracy. Both URL and AI imports have a 300-second read timeout; other API calls
 retain their existing timeouts. No imports are automatically retried. After a
 timeout or connection failure, check Mealie before retrying or switching tools:
 creation may already have succeeded. If the follow-up fetch fails, the error
@@ -358,9 +369,8 @@ Choose the tool according to the task:
 | Task | Tool |
 | --- | --- |
 | Ordinary recipe webpage | `import_recipe_from_url` |
-| Unstructured text, photos, video, combined sources, translation, or explicit AI import | `import_recipe_with_ai` (opt-in) |
+| Unstructured text, combined sources, translation, or explicit AI import | `import_recipe_with_ai` (opt-in) |
 | Save already-composed ingredients and instructions | `create_recipe` |
-| Attach a photo to an existing recipe without extracting content | `upload_recipe_image_file` |
 
 The opt-in controls only this new tool. It does not disable Mealie's own AI
 fallback for URL scraping or other existing AI features. See
@@ -463,7 +473,7 @@ with `create_food` / `create_unit`, or leave the text in the note. Pass
 
 A recipe's `settings` object controls what the UI renders. `showAssets` and
 `showNutrition` gate the assets and nutrition cards, so an asset uploaded with
-`upload_recipe_asset_file` can be present in the API response and still be
+the Mealie UI can be present in the API response and still be
 invisible in the web UI. Flip the toggle with:
 
 ```python
@@ -516,16 +526,45 @@ A failed or timed-out request may have completed remotely.
 - Check the [changelog](CHANGELOG.md) for changes and migration notes.
 - Review the [usage guide](USAGE_EXAMPLES.md) and
   [Mealie documentation](https://docs.mealie.io).
-- Report problems through [GitHub issues](https://github.com/rldiao/mealie-mcp-server/issues).
+- Report problems through [GitHub issues](https://github.com/nosuntoday/mealie-mcp-server/issues).
 - For pull requests, follow the [development workflow](#development) and include
   tests for behavior changes.
 
 ## License and Credits
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE). Original work © 2025 Robert Diao; fork changes © 2026 nosuntoday. The original license text is unchanged.
 
+- [Original Mealie MCP Server](https://github.com/rldiao/mealie-mcp-server) by Robert Diao and contributors
 - [Mealie](https://github.com/mealie-recipes/mealie) - The recipe management system
 - [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk) - SDK and
   bundled FastMCP server
 - [Model Context Protocol](https://modelcontextprotocol.io) - Protocol documentation
 - [Claude Desktop](https://claude.ai/download)
+
+## Transport, credentials and update checks
+
+Use a non-admin Mealie API user. Startup verifies `/api/users/self` and rejects
+invalid, malformed or admin credentials. Incoming MCP authorization headers are
+never forwarded to Mealie. There is no built-in remote authentication: restrict
+private test ports to loopback and require an authenticated proxy for remote use.
+
+`MCP_ALLOWED_HOSTS` and `MCP_ALLOWED_ORIGINS` are comma-separated exact allowlists
+replacing the loopback defaults. Whitespace is trimmed; empty entries and
+wildcard hosts are rejected. A wildcard port, e.g. `127.0.0.1:*`, is supported.
+Keep `127.0.0.1:*` in the host list for the container healthcheck. Set `LOG_LEVEL=INFO`:
+SDK DEBUG logging may include complete RPC arguments and private recipe content.
+
+Synchronous tools run in at most four worker threads. Cancelling a client does
+not stop an in-flight import; stopping the container can leave its outcome unknown.
+Check Mealie before retrying. Read-modify-write operations are not transactions
+across multiple clients: simultaneous edits to the same object may be lost.
+
+The bundled `openapi.json` is a historical upstream snapshot, not the live API
+contract. Before upgrading Mealie, compare the ingredient and instruction schemas
+with `src/models/recipe.py`, then re-run the roundtrip and live integration tests.
+Ingredient strings are text notes; call `parse_ingredients` explicitly for quantities.
+
+Short closed-world writes are serialized within this MCP process, so parallel
+calls from a single chat cannot overwrite each other's read-modify-write state.
+Reads and imports remain concurrent. Edits made through another MCP process or
+Mealie's own UI can still race with a write; read back after editing.

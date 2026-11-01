@@ -1,6 +1,24 @@
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+
+def normalize_step_duration(value: Any) -> Any:
+    """Match Mealie 3.30's JSON whole-seconds and zero-clearing contract."""
+    if isinstance(value, bool):
+        raise ValueError("Step duration must be whole seconds, not a boolean")
+    if value == 0:
+        return None
+    if isinstance(value, float) and 1 <= value <= 2147483647 and value.is_integer():
+        return int(value)
+    return value
+
+
+StepDuration = Annotated[
+    Optional[int],
+    Field(strict=True, ge=0, le=2147483647),
+    BeforeValidator(normalize_step_duration),
+]
 
 
 class IngredientUnit(BaseModel):
@@ -9,6 +27,8 @@ class IngredientUnit(BaseModel):
     pluralName: Optional[str] = None
     description: str = ""
     extras: Optional[Dict[str, Any]] = None
+    standardQuantity: Optional[float] = None
+    standardUnit: Optional[str] = None
     fraction: bool = True
     abbreviation: str = ""
     pluralAbbreviation: Optional[str] = ""
@@ -27,6 +47,7 @@ class IngredientFood(BaseModel):
     labelId: Optional[str] = None
     label: Optional[Any] = None
     aliases: List[Any] = Field(default_factory=list)
+    substitutions: List[Dict[str, Any]] = Field(default_factory=list)
     householdsWithIngredientFood: List[str] = Field(default_factory=list)
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
@@ -37,11 +58,11 @@ class RecipeIngredient(BaseModel):
     unit: Optional[IngredientUnit] = None
     food: Optional[IngredientFood] = None
     note: Optional[str] = None
-    isFood: Optional[bool] = True
-    disableAmount: Optional[bool] = False
     display: Optional[str] = None
     title: Optional[str] = None
     originalText: Optional[str] = None
+    referencedRecipe: Optional[Dict[str, Any]] = None
+    substitutions: List[Dict[str, Any]] = Field(default_factory=list)
     referenceId: Optional[str] = None
 
 
@@ -50,11 +71,13 @@ class IngredientReference(BaseModel):
 
 
 class RecipeInstruction(BaseModel):
+    durationSeconds: StepDuration = None
     id: Optional[str] = None
     title: Optional[str] = None
     summary: Optional[str] = None
     text: str
     ingredientReferences: List[IngredientReference] = Field(default_factory=list)
+    noteReferences: List[IngredientReference] = Field(default_factory=list)
 
 
 class RecipeNutrition(BaseModel):
@@ -186,6 +209,9 @@ class Recipe(BaseModel):
     prepTime: Optional[str] = None
     cookTime: Optional[str] = None
     performTime: Optional[str] = None
+    totalTimeSeconds: Optional[int] = None
+    prepTimeSeconds: Optional[int] = None
+    performTimeSeconds: Optional[int] = None
     description: Optional[str] = None
     recipeCategory: Optional[List[RecipeCategory]] = Field(default_factory=list)
     tags: Optional[List[RecipeTag]] = Field(default_factory=list)
@@ -210,9 +236,15 @@ class Recipe(BaseModel):
 class RecipeIngredientInput(BaseModel):
     """Structured ingredient accepted by the create/update recipe tools.
 
-    Pass a plain string instead of this object to let Mealie's
-    natural-language parser resolve the quantity, unit, and food.
+    A plain string is stored as a text note. Call parse_ingredients explicitly
+    and reuse its structured quantity/unit/food objects for scalable amounts.
+    Lists replace the whole collection: copy originalText, referencedRecipe and
+    substitutions from get_recipe unchanged; omitted fields are lost.
     """
+
+    originalText: Optional[str] = None
+    referencedRecipe: Optional[Dict[str, Any]] = None
+    substitutions: Optional[List[Dict[str, Any]]] = None
 
     referenceId: Optional[str] = Field(
         default=None,
@@ -253,8 +285,16 @@ class RecipeInstructionInput(BaseModel):
     """Structured preparation step accepted by the create/update recipe tools.
 
     Pass a plain string instead of this object for a step that has no title
-    and no ingredient links.
+    and no ingredient links. Copy id and noteReferences from get_recipe to
+    preserve existing step and note links when replacing the collection.
     """
+
+    durationSeconds: StepDuration = Field(
+        default=None,
+        description="Mealie 3.30+: whole seconds for this step; null or zero clears. Copy this field when replacing steps.",
+    )
+    id: Optional[str] = None
+    noteReferences: Optional[List[IngredientReference]] = None
 
     text: str = Field(description="The instruction text for this step.")
     title: Optional[str] = Field(

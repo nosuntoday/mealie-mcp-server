@@ -6,7 +6,6 @@ import logging
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 
-
 ORGANIZERS = [
     ("category", "categories", "/api/organizers/categories"),
     ("tag", "tags", "/api/organizers/tags"),

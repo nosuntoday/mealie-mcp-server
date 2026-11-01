@@ -8,6 +8,8 @@ from models.shopping_list import (
 )
 from utils import format_api_params
 
+from .client import path_segment
+
 logger = logging.getLogger("mealie-mcp")
 
 
@@ -84,6 +86,7 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the shopping list details
         """
+        list_id = path_segment(list_id)
         if not list_id or not list_id.strip():
             raise ValueError("Shopping list ID cannot be empty")
 
@@ -100,6 +103,7 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the updated shopping list
         """
+        list_id = path_segment(list_id)
         if not list_id or not list_id.strip():
             raise ValueError("Shopping list ID cannot be empty")
         if not list_data:
@@ -128,6 +132,7 @@ class ShoppingListMixin:
         Returns:
             JSON response confirming deletion
         """
+        list_id = path_segment(list_id)
         if not list_id or not list_id.strip():
             raise ValueError("Shopping list ID cannot be empty")
 
@@ -150,6 +155,8 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the updated shopping list
         """
+        list_id = path_segment(list_id)
+        recipe_id = path_segment(recipe_id)
         if not list_id or not list_id.strip():
             raise ValueError("Shopping list ID cannot be empty")
         if not recipe_id or not recipe_id.strip():
@@ -180,6 +187,8 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the updated shopping list
         """
+        list_id = path_segment(list_id)
+        recipe_id = path_segment(recipe_id)
         if not list_id or not list_id.strip():
             raise ValueError("Shopping list ID cannot be empty")
         if not recipe_id or not recipe_id.strip():
@@ -317,6 +326,7 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the shopping list item details
         """
+        item_id = path_segment(item_id)
         if not item_id or not item_id.strip():
             raise ValueError("Shopping list item ID cannot be empty")
 
@@ -339,6 +349,7 @@ class ShoppingListMixin:
         Returns:
             JSON response containing the updated shopping list item
         """
+        item_id = path_segment(item_id)
         if not item_id or not item_id.strip():
             raise ValueError("Shopping list item ID cannot be empty")
         if not item_data:
@@ -379,6 +390,8 @@ class ShoppingListMixin:
         updates = [ShoppingListItemUpdate.model_validate(item) for item in items]
         if len({item.id for item in updates}) != len(updates):
             raise ValueError("An item may only appear once in a bulk update")
+        for item in updates:
+            path_segment(item.id)
         payload = []
         for item in updates:
             current = self.get_shopping_list_item(item.id)
@@ -406,6 +419,7 @@ class ShoppingListMixin:
         Returns:
             JSON response confirming deletion
         """
+        item_id = path_segment(item_id)
         if not item_id or not item_id.strip():
             raise ValueError("Shopping list item ID cannot be empty")
 
@@ -429,6 +443,8 @@ class ShoppingListMixin:
         if any(not isinstance(item_id, str) or not item_id.strip() for item_id in item_ids):
             raise ValueError("Item IDs cannot be empty")
 
+        for item_id in item_ids:
+            path_segment(item_id)
         params = {"ids": item_ids}
 
         logger.info({"message": "Deleting bulk shopping list items", "count": len(item_ids)})

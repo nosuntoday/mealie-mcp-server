@@ -50,3 +50,11 @@
 
 See [source guidance](src/AGENTS.md) and [test guidance](tests/AGENTS.md) for
 layer-specific conventions.
+
+## Maintained fork publication
+
+- Preserve the original MIT license and clear credit to Robert Diao's upstream project.
+- Keep the top README compatibility version/date synchronized with docs/compatibility.md and actual evidence. Distinguish real application tests from mock/API-schema tests.
+- Describe clients generically (ChatGPT, Claude, Codex and other MCP agents); do not imply untested client login flows passed.
+- scripts/check_mealie_compat.py is an opt-in destructive check for an empty disposable Docker instance only, never a user's Mealie server. Unit tests remain offline.
+- Publish no private infrastructure identifiers, credentials, deployment configuration or operational history.

@@ -26,7 +26,7 @@ def server(fetcher):
 async def test_ai_import_discovery(server):
     mcp, fetcher = server
     tools = await mcp.list_tools()
-    assert len(tools) == 62
+    assert len(tools) == 60
     tool = next(tool for tool in tools if tool.name == "import_recipe_with_ai")
     assert all(
         "import_recipe_with_ai" not in (other.description or "")
@@ -35,9 +35,9 @@ async def test_ai_import_discovery(server):
     assert not tool.inputSchema.get("required")
     assert len(tool.description.split()) <= 80
     assert set(tool.inputSchema["properties"]) == {
-        "content", "url", "image_paths", "translate_language", "create_new_organizers"
+        "content", "url", "translate_language", "create_new_organizers"
     }
-    for name in ("import_recipe_from_url", "create_recipe", "upload_recipe_image_file"):
+    for name in ("import_recipe_from_url", "create_recipe"):
         assert name in tool.description
     assert tool.annotations.readOnlyHint is False
     assert tool.annotations.idempotentHint is False
@@ -45,11 +45,11 @@ async def test_ai_import_discovery(server):
 
 
 @pytest.mark.parametrize(
-    ("has_content", "has_url", "has_images"),
-    [combo for combo in product((False, True), repeat=3) if any(combo)],
+    ("has_content", "has_url"),
+    [combo for combo in product((False, True), repeat=2) if any(combo)],
 )
 async def test_source_combinations(
-    invoke, fetcher, tmp_path, has_content, has_url, has_images
+    invoke, fetcher, tmp_path, has_content, has_url
 ):
     image = tmp_path / "recipe.jpg"
     image.write_bytes(b"image-data")
@@ -58,8 +58,6 @@ async def test_source_combinations(
         arguments["content"] = "  Private source material\n"
     if has_url:
         arguments["url"] = "https://example.com/recipe"
-    if has_images:
-        arguments["image_paths"] = [str(image)]
     result = await invoke("import_recipe_with_ai", **arguments)
     assert result == fetcher.recipe
     assert [(r["method"], r["url"]) for r in fetcher.requests] == [
@@ -75,9 +73,7 @@ async def test_source_combinations(
         **({"content": arguments["content"]} if has_content else {}),
         **({"url": arguments["url"]} if has_url else {}),
     }
-    assert request["files"] == (
-        [("images", ("0-recipe.jpg", b"image-data"))] if has_images else None
-    )
+    assert request["files"] is None
 
 
 @pytest.mark.parametrize("content", [
@@ -93,19 +89,6 @@ async def test_content_preserved_with_options(invoke, fetcher, content):
     }
 
 
-async def test_multiple_images_preserve_order_and_avoid_name_collisions(invoke, fetcher, tmp_path):
-    paths = []
-    for index in range(2):
-        directory = tmp_path / str(index)
-        directory.mkdir()
-        image = directory / "recipe.jpg"
-        image.write_bytes(bytes([index]))
-        paths.append(str(image))
-    await invoke("import_recipe_with_ai", image_paths=paths)
-    assert fetcher.requests[1]["files"] == [
-        ("images", ("0-recipe.jpg", b"\x00")),
-        ("images", ("1-recipe.jpg", b"\x01")),
-    ]
 
 
 @pytest.mark.parametrize("arguments", [
@@ -120,27 +103,6 @@ async def test_invalid_sources_do_not_issue_requests(invoke, fetcher, arguments)
     assert fetcher.requests == []
 
 
-@pytest.mark.parametrize("kind", ["missing", "empty", "directory", "permission"])
-async def test_invalid_files_fail_before_requests(
-    invoke, fetcher, tmp_path, monkeypatch, kind, caplog
-):
-    path = tmp_path / "private-filename.jpg"
-    if kind == "empty":
-        path.touch()
-    elif kind == "directory":
-        path.mkdir()
-    elif kind == "permission":
-        from pathlib import Path
-
-        def denied(self):
-            raise PermissionError("private-filename.jpg")
-
-        monkeypatch.setattr(Path, "read_bytes", denied)
-    with pytest.raises(ToolError) as caught:
-        await invoke("import_recipe_with_ai", image_paths=[str(path)])
-    assert "private-filename" not in str(caught.value)
-    assert "private-filename" not in caplog.text
-    assert fetcher.requests == []
 
 
 @pytest.mark.parametrize("group", [
@@ -175,14 +137,6 @@ async def test_provider_changes_are_checked_each_time(invoke, fetcher):
     assert len(fetcher.requests) == 4
 
 
-async def test_image_provider_required_only_for_photos(invoke, fetcher, tmp_path):
-    fetcher.responses["GET", "/api/groups/self"]["aiProviderSettings"]["imageProviderEnabled"] = False
-    image = tmp_path / "recipe.jpg"
-    image.write_bytes(b"image")
-    with pytest.raises(ToolError, match="image AI provider"):
-        await invoke("import_recipe_with_ai", image_paths=[str(image)])
-    assert len(fetcher.requests) == 1
-    await invoke("import_recipe_with_ai", content="recipe")
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 422, 500])

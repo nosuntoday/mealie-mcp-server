@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 from models.mealplan import MealPlanDateRange, MealPlanEntry, MealPlanUpdate
 from utils import format_api_params
 
+from .client import path_segment
+
 logger = logging.getLogger("mealie-mcp")
 
 
@@ -53,6 +55,7 @@ class MealplanMixin:
         recipe_id: Optional[str] = None,
         title: Optional[str] = None,
         entry_type: str = "breakfast",
+        end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new mealplan entry.
 
@@ -70,7 +73,11 @@ class MealplanMixin:
             MealieApiError: If the API request fails
         """
         entry = MealPlanEntry(
-            date=date, recipe_id=recipe_id, title=title, entry_type=entry_type
+            date=date,
+            recipe_id=recipe_id,
+            title=title,
+            entry_type=entry_type,
+            end_date=end_date,
         )
 
         # Build the request payload
@@ -79,6 +86,8 @@ class MealplanMixin:
             "entryType": entry.entry_type,
         }
 
+        if entry.end_date is not None:
+            payload["endDate"] = entry.end_date
         if entry.recipe_id:
             payload["recipeId"] = entry.recipe_id
         if entry.title:
@@ -91,6 +100,7 @@ class MealplanMixin:
         self, entry_id: str, entry_data: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Update an entry while preserving fields required by Mealie's PUT."""
+        entry_id = path_segment(entry_id)
         if not entry_id or not entry_id.strip():
             raise ValueError("Mealplan entry ID cannot be empty")
         patch = MealPlanUpdate.model_validate(entry_data).model_dump(
@@ -104,6 +114,7 @@ class MealplanMixin:
         merged_data = {**current_entry, **patch}
         MealPlanEntry(
             date=merged_data.get("date"),
+            end_date=merged_data.get("endDate"),
             recipe_id=merged_data.get("recipeId"),
             title=merged_data.get("title"),
             entry_type=merged_data.get("entryType", "breakfast"),
@@ -125,6 +136,7 @@ class MealplanMixin:
             ValueError: If item_id is empty
             MealieApiError: If the API request fails
         """
+        item_id = path_segment(item_id)
         if not item_id or not item_id.strip():
             raise ValueError("Mealplan entry ID cannot be empty")
 

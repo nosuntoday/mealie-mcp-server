@@ -1,22 +1,15 @@
+# Example Mealie instance; add the MCP service described in README.md.
 services:
   mealie:
-    image: ghcr.io/mealie-recipes/mealie:latest # 
-
-
-    container_name: mealie
-    restart: always
+    image: ghcr.io/mealie-recipes/mealie:v3.30.0
+    restart: unless-stopped
     ports:
-        - "9925:9000" # 
-
-
+      - "127.0.0.1:9925:9000"
     deploy:
       resources:
         limits:
-          memory: 1000M # 
-
-
+          memory: 1000M
     volumes:
       - mealie-data:/app/data/
-
 volumes:
   mealie-data:

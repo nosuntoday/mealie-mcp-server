@@ -1,10 +1,18 @@
 import json
 import logging
+import re
 from typing import Any, Dict
 
 import httpx
 
 logger = logging.getLogger("mealie-mcp")
+
+
+def path_segment(value: str | int) -> str:
+    """Reject route delimiters before URL construction; never repair an ID."""
+    if type(value) not in (str, int) or not re.fullmatch(r"[\w-]+", str(value)):
+        raise ValueError("Invalid API path segment")
+    return str(value)
 
 
 class MealieApiError(Exception):
@@ -37,6 +45,11 @@ class MealieClient:
         try:
             response = self._client.get("/api/app/about")
             response.raise_for_status()
+            identity = self._client.get("/api/users/self")
+            identity.raise_for_status()
+            user = identity.json()
+            if not isinstance(user, dict) or user.get("admin") is not False:
+                raise ValueError("MCP requires a verified non-admin Mealie user")
         except BaseException as error:
             self._client.close()
             self._log_failure("Checking Mealie health", error)
@@ -68,6 +81,9 @@ class MealieClient:
         - Multipart uploads via files= parameter
         - Form data via data= parameter
         """
+        # Defense in depth for static paths and IDs obtained from backend responses.
+        if not re.fullmatch(r"(/[\w-]+)+", url):
+            raise ValueError("Invalid API path")
         try:
             logger.debug({"operation": "Making Mealie API request"})
             # Leave multipart boundaries to httpx and do not mutate caller headers.

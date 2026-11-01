@@ -9,6 +9,8 @@ from mealie.client import MealieApiError
 from models.ai_import import AIProviderCapabilities
 from utils import format_api_params
 
+from .client import path_segment
+
 logger = logging.getLogger("mealie-mcp")
 
 
@@ -105,6 +107,7 @@ class RecipeMixin:
         Returns:
             JSON response containing all recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 
@@ -121,6 +124,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if not recipe_data:
@@ -159,15 +163,27 @@ class RecipeMixin:
         Returns:
             Slug of the newly created recipe
         """
-        if not url.strip():
-            raise ValueError("URL cannot be empty")
+        TypeAdapter(HttpUrl).validate_python(url)
 
         logger.info({"message": "Importing recipe from URL"})
-        return self._handle_request(
-            "POST",
-            "/api/recipes/create/url",
-            json={"url": url, "includeTags": include_tags},
-        )
+        try:
+            return self._handle_request(
+                "POST", "/api/recipes/create/url",
+                json={"url": url, "includeTags": include_tags},
+                timeout=httpx.Timeout(30.0, read=300.0),
+            )
+        except MealieApiError as error:
+            if error.status_code in (502, 503, 504):
+                raise ValueError(
+                    "URL import proxy failed; creation outcome is unknown. "
+                    "Check Mealie before retrying."
+                ) from None
+            raise
+        except (TimeoutError, ConnectionError):
+            raise ValueError(
+                "URL import connection failed or timed out; creation outcome is unknown. "
+                "Check Mealie for the recipe before retrying or using another import tool."
+            ) from None
 
     def import_recipe_with_ai(
         self,
@@ -224,6 +240,11 @@ class RecipeMixin:
                 timeout=httpx.Timeout(30.0, read=300.0),
             )
         except MealieApiError as error:
+            if error.status_code in (502, 503, 504):
+                raise ValueError(
+                    "AI import proxy failed; creation outcome is unknown. "
+                    "Check Mealie before retrying."
+                ) from None
             if error.status_code == 404:
                 raise ValueError(
                     "AI import endpoint unavailable; Mealie 3.23.0 or newer is required"
@@ -251,6 +272,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if not recipe_data:
@@ -269,6 +291,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 
@@ -286,6 +309,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 
@@ -309,11 +333,14 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if category_ids is None and tag_ids is None:
             raise ValueError("At least one of category_ids or tag_ids must be provided")
 
+        for identifier in (category_ids or []) + (tag_ids or []):
+            path_segment(identifier)
         logger.info({"message": "Setting recipe categories and tags"})
         recipe_data = {}
         if category_ids is not None:
@@ -332,6 +359,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the newly created duplicate recipe
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 
@@ -352,6 +380,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the updated recipe
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 
@@ -375,6 +404,8 @@ class RecipeMixin:
         Returns:
             JSON response confirming the image was set
         """
+        slug = path_segment(slug)
+        TypeAdapter(HttpUrl).validate_python(image_url)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if not image_url:
@@ -403,6 +434,7 @@ class RecipeMixin:
         Returns:
             JSON response confirming the image was uploaded
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if not image_data:
@@ -441,6 +473,7 @@ class RecipeMixin:
         Returns:
             JSON response containing the uploaded asset details
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
         if not asset_data:
@@ -467,6 +500,7 @@ class RecipeMixin:
         Returns:
             JSON response confirming deletion
         """
+        slug = path_segment(slug)
         if not slug:
             raise ValueError("Recipe slug cannot be empty")
 

@@ -60,7 +60,8 @@ Scraping support varies by website and Mealie version.
 
 Enable `MEALIE_ENABLE_AI_IMPORT=true`, restart the MCP server, and refresh the
 client's tools. Mealie 3.23.0+ and a configured default AI provider are required.
-Photos need an image provider; video transcription needs an audio provider.
+Server file paths and photo uploads are not supported by this MCP. For photos,
+compose a text recipe in the chat and save it, or upload the original in Mealie.
 
 ```python
 import_recipe_with_ai(content="Tomato toast: toast bread, add sliced tomato and salt.")
@@ -71,20 +72,15 @@ import_recipe_with_ai(
     translate_language="English",
 )
 
-import_recipe_with_ai(
-    image_paths=["/server/recipes/page-1.jpg", "/server/recipes/page-2.jpg"],
-    create_new_organizers=False,
-)
 ```
 
-Image paths must exist on the MCP server, including inside its container when
-applicable. These examples create and save recipes, sending sources through
+These examples create and save recipes, sending sources through
 Mealie's configured AI providers; provider charges may apply. Multiple sources
 produce one recipe, and supplied text wins on disagreement. Review the result.
 
 Prefer `import_recipe_from_url` for an ordinary recipe webpage, `create_recipe`
-for a recipe already composed into ingredients and instructions, and
-`upload_recipe_image_file` to attach a photo without extracting a new recipe.
+for a recipe already composed into ingredients and instructions. Use
+`set_recipe_image_from_url` for an existing public HTTP(S) image.
 Never automatically retry an import after a timeout: first check whether Mealie
 created it. A failed follow-up fetch returns `created_slug` and `stage` for recovery.
 
@@ -142,13 +138,11 @@ matches before creating the recipe.
 
 ```text
 "Set the chocolate cake recipe's image to https://example.com/cake.jpg"
-"Upload the image at /Users/me/Pictures/dish.jpg for the pasta recipe"
-"Attach /Users/me/Documents/recipe-notes.pdf to the pasta recipe"
+"Set the pasta recipe image from https://example.com/dish.jpg"
+Local image and asset uploads are performed in Mealie, not through this connector.
 ```
 
-Replace example URLs and paths with real ones. Files must be accessible to the
-server process; a remote or containerized server cannot read your desktop files
-unless you make them available there.
+Replace example URLs with public URLs accessible to Mealie. For files on your device, use Mealie’s upload interface.
 
 ### Marking as Made and Deleting
 
@@ -342,3 +336,27 @@ Refresh the client's tool list and update saved calls using the
 
 - [README](README.md) - Installation, configuration, and tool reference
 - [Changelog](CHANGELOG.md) - Changes and migration notes
+
+### Data integrity and concurrent editing
+
+Plain ingredient strings are stored as notes, without automatic parsing. Call
+`parse_ingredients` explicitly and pass its structured quantity/unit/food results
+when scalable quantities are needed. Supplying ingredients or instructions
+replaces that entire collection: first read the recipe and preserve originalText,
+referencedRecipe, substitutions, step IDs and ingredient/note references. Rendered
+`display` is omitted deliberately so Mealie recalculates it after amount changes.
+
+Read-modify-write operations (recipe updates, list rename and item edits) can
+lose another user's intervening change. Avoid editing the same object together;
+read back after writing. Tool annotations are hints, not permission enforcement.
+
+Short closed-world writes are serialized within this MCP process, so parallel
+calls from a single chat cannot overwrite each other's read-modify-write state.
+Reads and imports remain concurrent. Edits made through another MCP process or
+Mealie's own UI can still race with a write; read back after editing.
+
+## Mealie 3.30 fields
+
+Pass `durationSeconds` on structured instruction objects to preserve or set a step timer. Whole seconds from 1 to 2147483647 are accepted; `0` or `null` clears it. When replacing instructions, copy all fields and references you want to preserve. Omitting the entire instruction list leaves existing steps untouched.
+
+For a weekly meal plan set `date` to the first day and `end_date` to exactly six days later. Single and bulk creation support this field. When moving a week, update both dates. `clear_end_date=true` converts an entry to a single day; it cannot be combined with a replacement end date. `get_all_mealplans` date filters are unchanged.

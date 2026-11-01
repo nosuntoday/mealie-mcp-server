@@ -73,13 +73,10 @@ async def test_create_recipe_accepts_flat_and_structured(invoke, fetcher):
     assert ings[1]["food"] == {
         "id": "f1",
         "name": "egg",
-        "description": "",
-        "aliases": [],
-        "householdsWithIngredientFood": [],
     }
     # already a valid UUID -> passes through unchanged
     assert ings[1]["referenceId"] == "a1000001-0000-4000-8000-000000000001"
-    assert steps[0]["ingredientReferences"] == []
+    assert steps[0].get("ingredientReferences", []) == []
     assert steps[1]["title"] == "Eggs"
     assert steps[1]["ingredientReferences"] == [
         {"referenceId": "a1000001-0000-4000-8000-000000000001"}
@@ -163,6 +160,9 @@ async def test_update_recipe_maps_all_fields(invoke, fetcher):
         "prepTime": "10 min",
         "cookTime": "25 min",
         "performTime": "20 min",
+        "totalTimeSeconds": None,
+        "prepTimeSeconds": None,
+        "performTimeSeconds": None,
         "orgURL": "https://example.com/r",
         "tags": [{"id": "t1", "name": "Quick", "slug": "quick"}],
         "tools": [{"id": "k1", "name": "Pfanne", "slug": "pfanne"}],
@@ -304,110 +304,16 @@ async def test_update_recipe_propagates_failure_without_fallback(
     )
 
 
-@pytest.mark.parametrize(
-    "file_name,explicit_extension,expected",
-    [
-        ("photo.jpg", None, "jpg"),
-        ("photo.JPEG", None, "jpeg"),
-        ("photo with spaces.png", None, "png"),
-        ("archive.tar.webp", None, "webp"),
-        ("photo.jpg", "png", "png"),
-        # a leading dot is accepted and stripped, like Mealie itself does
-        ("photo.jpg", ".png", "png"),
-    ],
-)
-async def test_upload_recipe_image_sends_extension_form_field(
-    invoke, fetcher, tmp_path, file_name, explicit_extension, expected
-):
-    """Mealie's PUT /recipes/{slug}/image requires a separate `extension` form
-    field; omitting it returns 422 Field required."""
-    path = tmp_path / file_name
-    path.write_bytes(b"image-bytes")
-
-    kwargs = {} if explicit_extension is None else {"extension": explicit_extension}
-    await invoke(
-        "upload_recipe_image_file", slug="test-recipe", image_path=str(path), **kwargs
-    )
-
-    req = fetcher.last("PUT", "/api/recipes/test-recipe/image")
-    assert req["data"] == {"extension": expected}
-    assert req["files"]["image"] == (file_name, b"image-bytes")
-    assert req["json"] is None
 
 
-async def test_upload_recipe_image_rejects_missing_file(invoke, fetcher, tmp_path):
-    with pytest.raises(ToolError):
-        await invoke(
-            "upload_recipe_image_file",
-            slug="test-recipe",
-            image_path=str(tmp_path / "nope.jpg"),
-        )
-    assert fetcher.last("PUT", "/image") is None
 
 
-async def test_upload_recipe_image_rejects_file_without_extension(
-    invoke, fetcher, tmp_path
-):
-    path = tmp_path / "photo"
-    path.write_bytes(b"image-bytes")
-
-    with pytest.raises(ToolError):
-        await invoke(
-            "upload_recipe_image_file", slug="test-recipe", image_path=str(path)
-        )
-    assert fetcher.last("PUT", "/image") is None
 
 
-async def test_upload_recipe_asset_sends_name_icon_and_extension(
-    invoke, fetcher, tmp_path
-):
-    """POST /recipes/{slug}/assets requires name, icon and extension form fields."""
-    path = tmp_path / "nutrition notes.pdf"
-    path.write_bytes(b"asset-bytes")
-
-    out = await invoke(
-        "upload_recipe_asset_file", slug="test-recipe", asset_path=str(path)
-    )
-
-    req = fetcher.last("POST", "/api/recipes/test-recipe/assets")
-    assert req["data"] == {
-        "name": "nutrition notes",
-        "icon": "mdi-file",
-        "extension": "pdf",
-    }
-    assert req["files"]["file"] == ("nutrition notes.pdf", b"asset-bytes")
-    assert out["fileName"] == "nutrition notes.pdf"
 
 
-async def test_upload_recipe_asset_honors_explicit_fields(invoke, fetcher, tmp_path):
-    path = tmp_path / "scan.pdf"
-    path.write_bytes(b"asset-bytes")
-
-    await invoke(
-        "upload_recipe_asset_file",
-        slug="test-recipe",
-        asset_path=str(path),
-        name="Original scan",
-        icon="mdi-file-pdf-box",
-        extension="PDF",
-    )
-
-    req = fetcher.last("POST", "/assets")
-    assert req["data"] == {
-        "name": "Original scan",
-        "icon": "mdi-file-pdf-box",
-        "extension": "pdf",
-    }
 
 
-async def test_upload_recipe_asset_rejects_missing_file(invoke, fetcher, tmp_path):
-    with pytest.raises(ToolError):
-        await invoke(
-            "upload_recipe_asset_file",
-            slug="test-recipe",
-            asset_path=str(tmp_path / "nope.pdf"),
-        )
-    assert fetcher.last("POST", "/assets") is None
 
 
 async def test_update_recipe_merges_settings_onto_current(invoke, fetcher):

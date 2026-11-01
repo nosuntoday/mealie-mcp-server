@@ -1,4 +1,5 @@
 from datetime import date as Date
+from datetime import timedelta
 from typing import Annotated, Literal, Optional, Self
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
@@ -26,6 +27,7 @@ class MealPlanEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     date: ISODate
+    end_date: Optional[ISODate] = None
     recipe_id: Optional[Identifier] = None
     title: Optional[str] = None
     entry_type: EntryType = "breakfast"
@@ -34,6 +36,13 @@ class MealPlanEntry(BaseModel):
     def require_recipe_or_title(self) -> Self:
         if not self.recipe_id and not (self.title and self.title.strip()):
             raise ValueError("Either recipe_id or title must be provided")
+        if self.end_date is not None:
+            if Date.fromisoformat(self.end_date) - Date.fromisoformat(
+                self.date
+            ) != timedelta(days=6):
+                raise ValueError(
+                    "A weekly plan must end exactly six days after its start"
+                )
         return self
 
 
@@ -41,6 +50,7 @@ class MealPlanUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     date: Optional[ISODate] = None
+    end_date: Optional[ISODate] = Field(default=None, alias="endDate")
     recipe_id: Optional[Identifier] = Field(default=None, alias="recipeId")
     title: Optional[str] = None
     entry_type: Optional[EntryType] = Field(default=None, alias="entryType")
