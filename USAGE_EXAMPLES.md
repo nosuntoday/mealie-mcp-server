@@ -360,3 +360,7 @@ Mealie's own UI can still race with a write; read back after editing.
 Pass `durationSeconds` on structured instruction objects to preserve or set a step timer. Whole seconds from 1 to 2147483647 are accepted; `0` or `null` clears it. When replacing instructions, copy all fields and references you want to preserve. Omitting the entire instruction list leaves existing steps untouched.
 
 For a weekly meal plan set `date` to the first day and `end_date` to exactly six days later. Single and bulk creation support this field. When moving a week, update both dates. `clear_end_date=true` converts an entry to a single day; it cannot be combined with a replacement end date. `get_all_mealplans` date filters are unchanged.
+
+### Mealie version requirements
+
+Non-null step durations and weekly plans require a known Mealie release of 3.30 or newer. The connector rejects these requests before writing on older or unknown versions; null timers and zero clearing are harmless on older versions. Restart the MCP connector after every Mealie version change, including downgrades, so its startup version check is refreshed.

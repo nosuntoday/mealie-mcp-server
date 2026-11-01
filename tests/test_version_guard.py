@@ -13,7 +13,7 @@ from server import ServerConfig, create_server
 
 
 @contextmanager
-def backend_for(version):
+def backend_for(version, recipe=None):
     requests = []
 
     def respond(request):
@@ -23,7 +23,7 @@ def backend_for(version):
             return httpx.Response(200, json={"admin": False})
         requests.append(request)
         if request.method == "GET":
-            return httpx.Response(200, json={"slug": "test", "name": "Test"})
+            return httpx.Response(200, json=recipe or {"slug": "test", "name": "Test"})
         if request.url.path == "/api/recipes" and request.method == "POST":
             return httpx.Response(200, json="test")
         return httpx.Response(200, json=json.loads(request.content))
@@ -48,7 +48,7 @@ CASES = [
     ),
     (
         "update_recipe",
-        {"slug": "test", "instructions": [{"text": "Wait", "durationSeconds": 0}]},
+        {"slug": "test", "instructions": [{"text": "Wait", "durationSeconds": 600}]},
     ),
     (
         "create_mealplan",
@@ -115,3 +115,64 @@ async def test_active_source_schemes_rejected_before_writes(source, tool, args):
         with pytest.raises(ToolError, match="source metadata"):
             await mcp.call_tool(tool, {**args, "org_url": source})
         assert requests == []
+
+
+@pytest.mark.parametrize("version", [None, "nightly", "v3.30.0-rc1"])
+@pytest.mark.parametrize(
+    "tool,args",
+    [
+        ("create_recipe", {"name": "Test"}),
+        ("update_recipe", {"slug": "test", "ingredients": ["Rice"]}),
+    ],
+)
+async def test_unknown_modern_backend_allows_ordinary_edits_with_null_timer(
+    version, tool, args
+):
+    recipe = {
+        "slug": "test",
+        "name": "Test",
+        "recipeInstructions": [{"text": "Mix", "durationSeconds": None}],
+    }
+    with backend_for(version, recipe) as (mcp, requests):
+        await mcp.call_tool(tool, args)
+        written = json.loads(next(r.content for r in requests if r.method == "PUT"))
+        assert written["recipeInstructions"] == recipe["recipeInstructions"]
+        assert sum(r.method == "POST" for r in requests) == (tool == "create_recipe")
+
+
+@pytest.mark.parametrize("duration", [0, None])
+async def test_legacy_backend_accepts_harmless_timer_clearing(duration):
+    with backend_for("v3.29.0") as (mcp, requests):
+        await mcp.call_tool(
+            "update_recipe",
+            {
+                "slug": "test",
+                "instructions": [{"text": "Mix", "durationSeconds": duration}],
+            },
+        )
+        assert (
+            json.loads(requests[-1].content)["recipeInstructions"][0]["durationSeconds"]
+            is None
+        )
+
+
+async def test_unknown_backend_keeps_existing_positive_timer_from_being_written():
+    recipe = {
+        "slug": "test",
+        "name": "Test",
+        "recipeInstructions": [{"text": "Mix", "durationSeconds": 600}],
+    }
+    with backend_for("nightly", recipe) as (mcp, requests):
+        with pytest.raises(ToolError, match="requires Mealie 3.30"):
+            await mcp.call_tool(
+                "update_recipe", {"slug": "test", "ingredients": ["Rice"]}
+            )
+        assert all(r.method == "GET" for r in requests)
+
+
+async def test_spaces_inside_source_text_do_not_form_active_scheme():
+    with backend_for("v3.29.0") as (mcp, requests):
+        await mcp.call_tool(
+            "update_recipe", {"slug": "test", "org_url": "java script:x"}
+        )
+        assert json.loads(requests[-1].content)["orgURL"] == "java script:x"

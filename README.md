@@ -1,7 +1,7 @@
 # Mealie MCP Server
 
 > **Compatibility:** Mealie **3.30.0** — last tested **2026-11-01**, against a real isolated Mealie instance.
-> Mealie **3.29.0** was also tested against a real isolated instance on the same date. Step durations and weekly plans require 3.30+ and are rejected before writing on older or unknown versions.
+> Mealie **3.29.0** was also tested against a real isolated instance on the same date. Non-null step durations and weekly plans require 3.30+ and are rejected before writing on older or unknown versions.
 > See [compatibility evidence](docs/compatibility.md) for the exact test scope and limits.
 
 An independently maintained fork of [Robert Diao's Mealie MCP Server](https://github.com/rldiao/mealie-mcp-server), based on upstream commit `86ebf37`.

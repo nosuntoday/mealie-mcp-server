@@ -148,9 +148,12 @@ def _recipe_changes(
         _require_text(changes["name"], "Recipe name")
     source = changes.get("orgURL", "")
     # Only detect active schemes; preserve the original free-form metadata.
-    normalized_source = re.sub(r"[\x00-\x20\x7f]", "", source.lstrip()).lower()
+    normalized_source = re.sub(r"^[\x00-\x20]+", "", source)
+    normalized_source = re.sub(r"[\t\r\n]", "", normalized_source).lower()
     if normalized_source.startswith(("javascript:", "data:", "vbscript:")):
-        raise ValueError("Unsafe scheme in recipe source metadata")
+        raise ValueError(
+            "Unsafe scheme in recipe source metadata; prefix a plain-text reference with Source: "
+        )
     if "recipeServings" in changes and not math.isfinite(changes["recipeServings"]):
         raise ValueError("Servings must be finite")
     built_ingredients = [_build_ingredient(i) for i in ingredients or []]

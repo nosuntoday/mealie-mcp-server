@@ -45,7 +45,7 @@ class RecipeMixin:
 
     def require_step_duration_support(self, recipe_data: Dict[str, Any]) -> None:
         if any(
-            "durationSeconds" in step
+            isinstance(step, dict) and step.get("durationSeconds") is not None
             for step in recipe_data.get("recipeInstructions", []) or []
         ):
             self.require_mealie_330()

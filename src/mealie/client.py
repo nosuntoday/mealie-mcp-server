@@ -78,7 +78,7 @@ class MealieClient:
         if self._mealie_version is None or self._mealie_version < (3, 30, 0):
             raise ValueError(
                 "This operation requires Mealie 3.30 or newer with a known release version; "
-                "no changes were written. Restart the connector after upgrading Mealie."
+                "restart the connector after upgrading Mealie."
             )
 
     @staticmethod

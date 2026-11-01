@@ -4,12 +4,12 @@
 
 ## What was tested
 
-- 817 offline tests passed (including 34 Mealie 3.30 cases), exercising registered MCP tools, validation, request serialization and existing regressions.
+- 827 offline tests passed (including 34 Mealie 3.30 cases), exercising registered MCP tools, validation, request serialization and existing regressions.
 - A real, empty Mealie 3.30.0 Docker instance with SQLite and synthetic data: authenticated non-admin MCP startup; 59 standard tools; free-form source metadata creation/update; recipe creation with a step duration; unrelated ingredient editing and full step replacement preserving that duration; zero clearing; weekly plan creation, title editing, moving both dates, clearing the end date and bulk creation.
 - The connector used its actual FastMCP tool dispatch and real Mealie HTTP API. The Mealie server image was linux/arm64; the connector image was linux/amd64 under local emulation.
 - A separate linux/amd64 container smoke check passed: non-root, read-only filesystem, initialize/session cleanup, annotations, 60 tools with optional AI import enabled, removed file-upload tools, host/origin rejection and separation of incoming authorization from the Mealie credential. Its backend was synthetic.
 - Frozen Python package installation and wheel/source-distribution builds passed. Runtime dependency audit reported no known vulnerabilities on this date. Ruff correctness/import checks passed. The inherited production call to `datetime.utcnow()` still emits a deprecation warning (reported by two tests).
-- A real, empty Mealie 3.29.0 instance additionally passed non-admin startup, free-form source create/update, ingredient/step roundtrip, daily meal-plan create/update and rejection of 3.30-only fields without new recipes/plans or changed steps. Offline tests also cover unknown versions and mixed daily/weekly batches; they are rejected before the first write. Mealie 3.28 remains covered by offline regressions only.
+- A real, empty Mealie 3.29.0 instance additionally passed non-admin startup, free-form source create/update, ingredient/step roundtrip, daily meal-plan create/update and rejection of 3.30-only fields without new recipes/plans or changed steps. Offline tests also cover unknown versions and mixed daily/weekly batches; requested non-null timers and weekly fields are rejected before the first write. Null timers and normalized zero clearing remain compatible with legacy/unknown versions. Mealie 3.28 remains covered by offline regressions only.
 
 The eight upstream PRs and the intentional fork differences are documented in the [parity audit](pr-parity-2026-11-01.md).
 
