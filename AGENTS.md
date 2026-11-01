@@ -53,6 +53,8 @@ layer-specific conventions.
 
 ## Maintained fork publication
 
+- Follow [CONTRIBUTING.md](CONTRIBUTING.md) as the required maintenance and release workflow. Keep source, documentation, tested compatibility and release evidence current together.
+
 - Preserve the original MIT license and clear credit to Robert Diao's upstream project.
 - Keep the top README compatibility version/date synchronized with docs/compatibility.md and actual evidence. Distinguish real application tests from mock/API-schema tests.
 - Describe clients generically (ChatGPT, Claude, Codex and other MCP agents); do not imply untested client login flows passed.

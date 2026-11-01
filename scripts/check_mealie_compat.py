@@ -87,11 +87,15 @@ async def main():
         recipe = await call(
             "create_recipe",
             name="Synthetic duration test",
+            org_url="Family notebook",
             instructions=[{"text": "Wait", "durationSeconds": 600}],
         )
         slug = recipe["slug"]
+        assert recipe["orgURL"] == "Family notebook"
+        await call("update_recipe", slug=slug, org_url="Cookbook, page 42")
         recipe = await call("get_recipe", slug=slug)
         assert recipe["recipeInstructions"][0]["durationSeconds"] == 600
+        assert recipe["orgURL"] == "Cookbook, page 42"
         # Replacing another collection must not lose the existing step timer.
         await call("update_recipe", slug=slug, ingredients=["Synthetic ingredient"])
         recipe = await call("get_recipe", slug=slug)
@@ -149,6 +153,7 @@ async def main():
                 "mealie": about["version"],
                 "tools": len(tools),
                 "non_admin": True,
+                "source_metadata_create_update": "passed",
                 "step_duration_roundtrip": "passed",
                 "step_duration_clear": "passed",
                 "weekly_create_update_clear_bulk": "passed",

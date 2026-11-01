@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.2.1 — 2026-11-01
+
+- Document the maintained fork's release policy: current-source checks, regression tests, independent review, accurate compatibility evidence and synchronized documentation.
+
+- Complete the audit against our eight upstream PR heads (#35–#42). Version 0.2.0 was based on an earlier hardening snapshot and missed the final changes from #38 and #39.
+- Preserve optional ingredient `isFood` and `disableAmount` flags when supplied, without inventing defaults when absent.
+- Accept Mealie-native recipe import sources (`www.` addresses, share text containing an HTTP(S) URL, and long URLs). Preserve long HTTP(S) image URLs without truncation.
+- Treat `org_url` as free-form source metadata, including cookbook references.
+- Retain all seven added upstream regression suites. Explicitly adapt only the two fork policies: non-admin credentials and absence of server-local upload tools. See [PR parity audit](docs/pr-parity-2026-11-01.md).
+
 ## 0.2.0 — 2026-11-01 (maintained fork)
 
 - Preserve Mealie 3.30 `durationSeconds` in recipe-step creation and replacement, with explicit zero/null clearing and validation.

@@ -54,6 +54,9 @@ class IngredientFood(BaseModel):
 
 
 class RecipeIngredient(BaseModel):
+    # Version-dependent flags: preserve when supplied, omit when absent.
+    isFood: Optional[bool] = None
+    disableAmount: Optional[bool] = None
     quantity: Optional[float] = Field(default=None, allow_inf_nan=False)
     unit: Optional[IngredientUnit] = None
     food: Optional[IngredientFood] = None
@@ -245,6 +248,9 @@ class RecipeIngredientInput(BaseModel):
     originalText: Optional[str] = None
     referencedRecipe: Optional[Dict[str, Any]] = None
     substitutions: Optional[List[Dict[str, Any]]] = None
+    # Version-dependent flags: preserve when supplied, omit when absent.
+    isFood: Optional[bool] = None
+    disableAmount: Optional[bool] = None
 
     referenceId: Optional[str] = Field(
         default=None,

@@ -6,7 +6,7 @@
 An independently maintained fork of [Robert Diao's Mealie MCP Server](https://github.com/rldiao/mealie-mcp-server), based on upstream commit `86ebf37`.
 Original copyright and the [MIT license](LICENSE) are retained. This fork is not an official Mealie project or an endorsement by the original author.
 
-Version **0.2.0** adds Mealie 3.30 step durations and weekly plans, plus credential validation, field preservation, bounded concurrency and explicit tool annotations. Server-local file uploads are intentionally unavailable.
+Version **0.2.1** includes Mealie 3.30 step durations and weekly plans, plus credential validation, field preservation, bounded concurrency and explicit tool annotations. It completes the [audit of our eight upstream PRs](docs/pr-parity-2026-11-01.md), correcting omissions in 0.2.0. Server-local file uploads are intentionally unavailable.
 
 A Model Context Protocol (MCP) server that connects AI assistants to your
 [Mealie](https://github.com/mealie-recipes/mealie) recipe database through clients
@@ -61,16 +61,19 @@ Client examples describe integration options, not a promise that every client/ve
 
 ### Installation
 
-#### Option 1: Using the MCP SDK CLI (Recommended)
+#### Option 1: Local installation
 
-Clone the repository, then install the server into Claude Desktop with the
-`mcp` command supplied by the Python MCP SDK (no standalone `fastmcp` package
-is needed):
+Clone the repository and install its locked dependencies:
 
 ```bash
-git clone --branch v0.2.0 https://github.com/nosuntoday/mealie-mcp-server.git
+git clone --branch v0.2.1 https://github.com/nosuntoday/mealie-mcp-server.git
 cd mealie-mcp-server
 uv sync --locked
+```
+
+For a local stdio client, register `uv run --directory /absolute/path/to/mealie-mcp-server mealie-mcp-server` and set the two required environment variables in the client. For Claude Desktop, the Python MCP SDK also supplies an installer:
+
+```bash
 uv run mcp install src/server.py --with-editable . \
   --env-var MEALIE_BASE_URL=https://your-mealie-instance.com \
   --env-var MEALIE_API_KEY=your-mealie-api-key
@@ -88,7 +91,7 @@ cloning (in Claude Desktop, use `claude_desktop_config.json`):
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/nosuntoday/mealie-mcp-server@v0.2.0",
+        "git+https://github.com/nosuntoday/mealie-mcp-server@v0.2.1",
         "mealie-mcp-server"
       ],
       "env": {
@@ -100,7 +103,7 @@ cloning (in Claude Desktop, use `claude_desktop_config.json`):
 }
 ```
 
-Restart Claude Desktop to load the server.
+Reload your MCP client to load the server.
 
 ## Configuration
 
@@ -146,7 +149,7 @@ The bundled image is configured for **streamable HTTP on port 8765**; its health
 ### Build
 
 ```bash
-docker buildx build --load -t mealie-mcp-server:0.2.0 .
+docker buildx build --load -t mealie-mcp-server:0.2.1 .
 ```
 
 ### Standalone
@@ -160,7 +163,7 @@ docker run -d \
   -e MCP_HOST=0.0.0.0 \
   -e MCP_PORT=8765 \
   -p 127.0.0.1:8765:8765 \
-  mealie-mcp-server:0.2.0
+  mealie-mcp-server:0.2.1
 ```
 
 The port is published only on the host's loopback interface. See
@@ -527,8 +530,7 @@ A failed or timed-out request may have completed remotely.
 - Review the [usage guide](USAGE_EXAMPLES.md) and
   [Mealie documentation](https://docs.mealie.io).
 - Report problems through [GitHub issues](https://github.com/nosuntoday/mealie-mcp-server/issues).
-- For pull requests, follow the [development workflow](#development) and include
-  tests for behavior changes.
+- Follow the [maintenance and release policy](CONTRIBUTING.md), including current-source checks, regression tests, independent review and synchronized documentation.
 
 ## License and Credits
 

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import HttpUrl, TypeAdapter
+from pydantic import AnyHttpUrl, TypeAdapter
 
 from mealie import MealieFetcher
 from models.recipe import (
@@ -146,8 +146,6 @@ def _recipe_changes(
             changes[field + "Seconds"] = None
     if "name" in changes:
         _require_text(changes["name"], "Recipe name")
-    if changes.get("orgURL"):
-        TypeAdapter(HttpUrl).validate_python(changes["orgURL"])
     if "recipeServings" in changes and not math.isfinite(changes["recipeServings"]):
         raise ValueError("Servings must be finite")
     built_ingredients = [_build_ingredient(i) for i in ingredients or []]
@@ -224,7 +222,7 @@ def _create_populated_recipe(
 ) -> Dict[str, Any]:
     _require_text(name, "Recipe name")
     if image_url is not None:
-        TypeAdapter(HttpUrl).validate_python(image_url)
+        TypeAdapter(AnyHttpUrl).validate_python(image_url)
     slug = mealie.create_recipe(name)
     with _created_recipe_stage(slug, "fetch"):
         current = mealie.get_recipe(slug)
@@ -426,7 +424,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
         Args:
             name: The name of the new recipe.
             description: Recipe description.
-            org_url: Source URL for the recipe (shown as a link in the Mealie UI).
+            org_url: Source metadata, such as a URL or a cookbook reference.
             total_time: Total time as free text, e.g. "35 min".
             prep_time: Preparation time, same format as total_time.
             cook_time: Cooking time, same format as total_time.
@@ -513,7 +511,7 @@ def register_recipe_tools(mcp: FastMCP, mealie: MealieFetcher) -> None:
             prep_time: Preparation time, same format as total_time.
             cook_time: Cooking time, same format as total_time.
             perform_time: Hands-on/active time, same format as total_time.
-            org_url: Source URL for the recipe (shown as a link in the Mealie UI).
+            org_url: Source metadata, such as a URL or a cookbook reference.
             tags: Existing Mealie tags (id+name) to set; look up with get_tags.
             tools: Existing Mealie tools (id+name) to set; look up with get_tools.
             nutrition: Per-serving nutrition values (calories in kcal, sodium and

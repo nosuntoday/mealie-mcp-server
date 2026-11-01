@@ -437,11 +437,10 @@ async def test_url_import_timeout_is_unknown_outcome_and_never_retried(failure):
             {"slug": "valid", "image_url": "ftp://example.org/image"},
         ),
         ("create_recipe", {"name": "valid", "image_url": "file:///etc/passwd"}),
-        ("create_recipe", {"name": "valid", "org_url": "javascript:alert(1)"}),
-        ("update_recipe", {"slug": "valid", "org_url": "data:text/plain,bad"}),
     ],
 )
-async def test_non_http_urls_rejected_before_any_request(tool, args):
+async def test_non_http_fetch_urls_rejected_before_any_request(tool, args):
+    # org_url is free-form metadata, covered by test_upstream_imports.
     with real_backend() as (backend, requests):
         mcp = create_server(ServerConfig("http://mealie.invalid", "synthetic"))
         mcp.client_provider._client = backend
